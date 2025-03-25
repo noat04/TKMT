@@ -1,0 +1,12 @@
+.booklist {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 10px;
+    justify-content: center;
+    margin-top: 20px;
+}
+
+.booklist .book:hover {
+    transform: scale(1.05);
+    transition: transform 0.3s;
+}
