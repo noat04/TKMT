@@ -181,3 +181,57 @@ function App() {
 }
 
 export default App
+
+import React from 'react'
+import { data } from '../data/data.js'
+import { useCart } from '../component/CartContext.jsx'
+import { Link, useNavigate } from 'react-router-dom'
+import Book from './Book.jsx'
+const Booklist = () => {
+    const { cart, addToCart } = useCart()
+    const navigate = useNavigate()
+    const handleDetail = (book) => {
+        navigate(`/bookdetail/${book.id}`)
+    }
+    return (
+        <div>
+            <h1>BookList</h1>
+            <div>
+                {
+                    data.map((book) => {
+                        return (
+                            // <div key={book.id}>
+                            //     <img src={book.img} alt="" />
+                            //     <h3>{book.name}</h3>
+                            //     <p>{book.author}</p>
+                            //     <p>{book.price}</p>
+                            //     <button onClick={() => addToCart(book)}>AddtoCart</button>
+                            //     <button onClick={() => handleDetail(book)}>Detail</button>
+                            // </div>
+                            <Link to={`/bookdetail/${book.id}`} > <Book book={book}></Book></Link>
+                        )
+                    })
+                }
+            </div>
+        </div >
+    )
+}
+
+export default Booklist
+
+import React from 'react'
+
+const Book = ({ book }) => {
+    return (
+        <div>
+            <img src={book.img} alt="" />
+            <h3>{book.name}</h3>
+            <p>{book.author}</p>
+            <p>{book.price}</p>
+            <button onClick={() => addToCart(book)}>AddtoCart</button>
+            <button onClick={() => handleDetail(book)}>Detail</button>
+        </div>
+    )
+}
+
+export default Book
