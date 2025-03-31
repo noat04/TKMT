@@ -1,0 +1,657 @@
+Bước 1:
+Tạo project_server  java + Gradle
+Tạo project_Client java_Gradle (chọn vào project_server => chọn file => new => module (Location là thư mục lưu project-server))
+Bước 2: 
+Thêm các dependence
+implementation("org.neo4j.driver:neo4j-java-driver:5.28.1")
+compileOnly("org.projectlombok:lombok:1.18.36")
+annotationProcessor("org.projectlombok:lombok:1.18.36")
+implementation("com.google.code.gson:gson:2.12.1")
+
+testImplementation platform('org.junit:junit-bom:5.10.0')
+testImplementation 'org.junit.jupiter:junit-jupiter'
+Bước 3:
+Tạo database
+Import file csv
+Tạo thư mục script
+	Tạo directory
+	Tạo file script.cypher
+	Tạo file => script.cypher
+Kết nối neo4j
+	Chọn + 
+	Name : my data(hoặc theo đề thi)
+	Database : toan22645251
+	User: neo4j
+	Password: 123456789
+Câu 1: Tạo database có tên là [tên và mã số của sinh viên] làm bài. Ví dụ: sinh viên tên Lan 
+và có mã số sinh viên là 19898981; thì tên database là Lan19898981. 
+Viết các scripts để: 
+- Tạo các unique index trên các thuộc tính id cho tất cả các node. 
+- Load dữ liệu từ các CSV file cho trước vào database. 
+- Thiết lập các relationships giữa các node như mô hình đồ thị cho trên. 
+Lưu ý: Sinh viên tạo thư mục và tạo file trong cùng project làm bài để lưu các scripts//
+File script.cypher
+
+# Tao cac constaints (phải ghi CONSTRAINT)
+//CREATE CONSTRAINT unique_department_id FOR (d: Department) REQUIRE d.dept_id IS UNIQUE;
+//CREATE CONSTRAINT unique_doctor_id FOR (d: Doctor) REQUIRE d.doctor_id IS UNIQUE;
+//CREATE CONSTRAINT unique_patient_id FOR (d: Patient) REQUIRE d.patient_id IS UNIQUE;
+//
+//show CONSTRAINTS;
+//Lưu ý phải chọn từng hàng và chuột phải và excue hoặc explain query đều được
+//# LOAD departments 
+LOAD CSV WITH HEADERS FROM "file:///hospital/departments.csv" AS row
+WITH row WHERE row.id IS NOT NULL
+MERGE (d:Department {dept_id: row.id})
+SET d.name = row.name, d.location = row.location;
+
+//# LOAD doctors
+LOAD CSV WITH HEADERS FROM "file:///hospital/doctors.csv" AS row
+WITH row WHERE row.ID IS NOT NULL
+MERGE (doc:Doctor {doctor_id: row.ID})
+SET doc.name = row.Name, doc.speciality = row.Speciality, doc.phone = row.Phone;
+
+//# LOAD patients
+LOAD CSV WITH HEADERS FROM "file:///hospital/patients.csv" AS row
+WITH row WHERE row.ID IS NOT null
+MERGE (p:Patient {patient_id: row.ID})
+SET p.name = row.Name, p.phone = row.Phone, p.address = row.Address, p.gender = row.Gender, p.date_of_birth = date(row.DateOfBirth);
+
+//# LOAD BELONG_TO relationships
+LOAD CSV WITH HEADERS FROM "file:///hospital/doctors.csv" AS row
+WITH row WHERE row.ID IS NOT NULL AND row.DepartmentID IS NOT NULL
+MATCH (d:Department {dept_id: row.DepartmentID})
+MATCH (doc:Doctor {doctor_id: row.ID})
+MERGE (doc)-[:BELONG_TO]->(d);
+
+//# LOAD BE_TREATED relationships
+LOAD CSV WITH HEADERS FROM "file:///hospital/treatments.csv" AS row
+WITH row WHERE row.PatientID IS NOT NULL AND row.DoctorID IS NOT NULL
+MATCH (doc:Doctor {doctor_id: row.DoctorID})
+MATCH (p:Patient {patient_id: row.PatientID})
+MERGE (p)-[:BE_TREATED {start_date: date(row.StartDate), end_date: date(row.EndDate), diagnosis: row.Diagnosis}]->(doc);
+//#Tạo index
+CREATE FULLTEXT INDEX txt_index_speciality FOR (doc: Doctor) ON EACH [doc.speciality];
+//# Script Cau a: Tạo một bác sĩ mới
+CREATE (d:Doctor {doctor_id: $doctor_id, name: $name, phone: $phone, speciality: $speciality}) RETURN d
+//# Script Cau b: Thống kê số bác sỹ theo từng chuyên khoa (speciality) của một khoa (department)
+//nào đó khi biết tên khoa.
+//+ getNoOfDoctorsBySpeciality (departmentName: String) : Map<String, Long>
+MATCH (d:Doctor)-[:BELONG_TO]->(dep:Department {name: "Cardiology"})
+RETURN d.speciality AS speciality, count(d) AS noOfDoctors
+
+//# Script Cau c:  Tìm bác sĩ theo chuyên khoa (sử dụng FULL TEXT SEARCH)
+//# Tạo FULL TEXT INDEX trên thuộc tính speciality của Doctor
+CREATE FULLTEXT INDEX txt_index_speciality FOR (doc: Doctor) ON EACH [doc.speciality];
+CALL db.index.fulltext.queryNodes("txt_index_speciality", "Sports") YIELD node, score RETURN node;
+
+//# Script Cau d: Cập nhật nhật lại chuẩn đoán của bệnh nhân
+MATCH (p:Patient {patient_id: $patientId})-[r:BE_TREATED]->(d:Doctor {doctor_id: $doctorId})
+WHERE r.end_date IS NUL
+SET r.diagnosis = $diagnosis
+
+//Add some relationships between patients and doctors, and set the start_date property
+MATCH (p:Patient {patient_id: "PT003"}), (d:Doctor {doctor_id: "DR.001"})
+CREATE (p)-[:BE_TREATED {start_date: date("2025-03-01")}]->(d);
+
+//Update the diagnosis and end_date properties of the relationship
+MATCH (p:Patient {patient_id: "PT003"})-[r:BE_TREATED]->(d:Doctor {doctor_id: "DR.001"})
+WHERE r.end_date IS NULL
+SET r.diagnosis = "abc";
+
+//select after update
+MATCH (p:Patient {patient_id: "PT003"})-[r:BE_TREATED]->(d:Doctor {doctor_id: "DR.001"})
+RETURN r.start_date, r.end_date, r.diagnosis;
+Câu 2: Viết các lớp thực thể theo mô hình lớp trên
+Bước 1 : tạo packe dao , entity, util
+Bước 2: tạo class person
+@ToString
+@NoArgsConstructor
+@AllArgsConstructor
+@Getter
+@Setter
+public class Person implements Serializable {
+    protected String id;
+    protected String name;
+    protected String phone;
+}
+Bước 3: tạo enum Gender
+Tạo class chọn enum
+@ToString
+@NoArgsConstructor
+public enum Gender {
+    FEMALE, MALE, OTHER
+}
+
+Bước 4: tạo các class kế thừa Doctor, Patient và class Department và Treatment
+@ToString(callSuper = true)
+@NoArgsConstructor
+@AllArgsConstructor
+@Getter
+@Setter
+public class Patient extends Person implements Serializable {
+    private Gender gender;
+    private String dateOfBirth;
+    private String address;
+
+    public Patient(String id, String name, String phone, Gender gender, String dateOfBirth, String address) {
+        super(id, name, phone);
+        this.gender = gender;
+        this.dateOfBirth = dateOfBirth;
+        this.address = address;
+    }
+}
+ @ToString(callSuper = true)
+@NoArgsConstructor
+@AllArgsConstructor
+@Getter
+@Setter
+public class Doctor extends Person implements Serializable {
+    private String speciality;
+
+    @ToString.Exclude
+    private transient Department department;
+
+    public Doctor(String id, String name, String phone, String speciality) {
+        super(id, name, phone);
+        this.speciality = speciality;
+    }
+}
+@ToString
+@NoArgsConstructor
+@AllArgsConstructor
+@Getter
+@Setter
+public class Department implements Serializable {
+    private String id;
+    private String name;
+    private String location;
+}
+
+@ToString
+@NoArgsConstructor
+@AllArgsConstructor
+@Getter
+@Setter
+public class Treatment implements Serializable {
+    private Doctor doctor;
+    private Patient patient;
+    private LocalDate startDate;
+    private LocalDate endDate;
+    private String diagnosis;
+}
+
+Câu 3: Viết các lớp với các phương thức CRUD theo yêu cầu sau: 
+a. Thêm mới một bác sỹ. 
++ addDoctor (doctor: Doctor) : boolean 
+b. Thống kê số bác sỹ theo từng chuyên khoa (speciality) của một khoa (department) 
+nào đó khi biết tên khoa. 
++ getNoOfDoctorsBySpeciality (departmentName: String) : Map<String, Long> 
+//Key: Chuyên khoa; Value: Số bác sỹ 
+c. Dùng full-text search, tìm kiếm các bác sỹ theo chuyên khoa. 
++ listDoctorsBySpeciality (keyword: String): List<Doctor> 
+d. Cập nhật lại chẩn đoán (diagnosis) của một lượt điều trị khi biết mã số bác sỹ và mã 
+số bệnh nhân. Lưu ý, chỉ được phép cập nhật khi lượt điều trị này vẫn còn đang điều 
+trị (tức ngày kết thúc điều trị là null) 
++ updateDiagnosis(patientID: String, doctorID: String, newDiagnosis: String): 
+Boolean.
+Bước 1: tạo interface DoctorDAO và class DoctorDAOImpl
+Bước 2: tạo AppUtils 
+ public class AppUtils {
+
+    public static final String DB_NAME = "mtoan22645251";
+
+    /**
+     * Get the driver to connect to the Neo4j database
+     * @return
+     */
+    public static Driver getDriver() {
+        String username = "neo4j";
+        String password = "123456789";
+        String uri = "neo4j://localhost:7687";
+        return GraphDatabase.driver(uri, AuthTokens.basic(username, password));
+    }
+
+    /**
+     * @return
+     */
+    public static Session getSession() {
+        return getDriver().session(SessionConfig.forDatabase(DB_NAME));
+    }
+
+    /**
+     * Convert from Node to Doctor object
+     * @param node
+     * @return
+     */
+    public static Doctor toDoctor(Node node) {
+        return new Doctor(
+                node.get("doctor_id").asString(),
+                node.get("name").asString(),
+                node.get("phone").asString(),
+                node.get("speciality").asString()
+        );
+    }
+
+
+    /**
+     * @param doctor
+     * @return
+     */
+    public static Map<String, Object> toMap(Doctor doctor) {
+        return Map.of(
+                "doctor_id", doctor.getId(),
+                "name", doctor.getName(),
+                "phone", doctor.getPhone(),
+                "speciality", doctor.getSpeciality()
+        );
+    }
+
+}
+
+Bước 3: thêm các hàm vào interface DoctorDAO
+public interface DoctorDAO  {
+
+    Doctor findDoctorById(String doctorId) ;
+
+    boolean addDoctor(Doctor doctor) ;
+
+    Map<String, Long> getNoOfDoctorsBySpeciality(String deptName) ;
+
+    List<Doctor> listDoctorsBySpeciality(String keyword) ;
+
+    boolean updateDiagnosis(String patientId, String doctorId, String newDiagnosis) ;
+}
+
+Bước 4: thêm các hàm thực hiện cách hàm phương thức theo yêu cầu đề bài
+public class DoctorDAOImpl implements DoctorDAO {
+
+    /**
+     * Find a doctor by id
+     * @param doctorId
+     * @return
+     */
+    @Override
+    public Doctor findDoctorById(String doctorId) {
+        String query = "MATCH (d:Doctor {doctor_id: $doctorId}) RETURN d";
+        try (var session = AppUtils.getSession()) {
+            return session.executeRead(tx -> {
+                Result result = tx.run(query, Map.of("doctorId", doctorId));
+                if (result.hasNext()) {
+                    var record = result.next();
+                    Node node = record.get("d").asNode();
+                    return AppUtils.toDoctor(node);
+                }
+                return null;
+            });
+        }
+    }
+
+    /**
+     * Add a new doctor
+     * @param doctor
+     * @return
+     */
+    @Override
+    public boolean addDoctor(Doctor doctor) {
+        try (var session = AppUtils.getSession()) {
+            return session.executeWrite(tx -> {
+                String query = "CREATE (d:Doctor {doctor_id: $doctor_id, name: $name, phone: $phone, speciality: $speciality}) RETURN d";
+
+                ResultSummary summary = tx.run(query, AppUtils.toMap(doctor)).consume();
+
+                return summary.counters().nodesCreated() > 0;
+            });
+        }
+    }
+
+    /**
+     * @return
+     */
+    @Override
+    public Map<String, Long> getNoOfDoctorsBySpeciality(String deptName) {
+        try (var session = AppUtils.getSession()) {
+            return session.executeRead(tx -> {
+                String query = "MATCH (d:Doctor)-[:BELONG_TO]->(dep:Department {name: $deptName})\n" +
+                        "RETURN d.speciality AS speciality, count(d) AS noOfDoctors";
+
+                Result result = tx.run(query, Map.of("deptName", deptName));
+
+                return result.stream()
+                        .collect(Collectors.toMap(
+                                record -> record.get("speciality").asString(),
+                                record -> record.get("noOfDoctors").asLong()
+                        ));
+            });
+        }
+    }
+
+    /**
+     * CREATE FULLTEXT INDEX txt_index_speciality FOR (doc: Doctor) ON EACH [doc.speciality]
+     * @param keywords
+     * @return
+     */
+    @Override
+    public List<Doctor> listDoctorsBySpeciality(String keywords) {
+        try (var session = AppUtils.getSession()) {
+            return session.executeRead(tx -> {
+                String query = "CALL db.index.fulltext.queryNodes('txt_index_speciality', $keywords) YIELD node, score RETURN node as d";
+                Result result = tx.run(query, Map.of("keywords", keywords));
+
+                if(!result.hasNext())
+                    return null;
+
+                return result.stream()
+                        .map(record -> record.get("d").asNode())
+                        .map(node -> AppUtils.toDoctor(node))
+                        .collect(Collectors.toList());
+            });
+        }
+    }
+
+
+    /**
+     * Update the diagnosis of a patient treated by a doctor with a new diagnosis and end the treatment process
+     * @param patientId
+     * @param doctorId
+     * @param newDiagnosis
+     * @return
+     */
+    @Override
+    public boolean updateDiagnosis(String patientId, String doctorId, String newDiagnosis) {
+        try (var session = AppUtils.getSession()) {
+            return session.executeWrite(tx -> {
+
+                String query = "MATCH (p:Patient {patient_id: $patientId})-[r:BE_TREATED]->(d:Doctor {doctor_id: $doctorId})\n" +
+                        "WHERE r.end_date IS NULL\n" +
+                        "SET r.diagnosis = $diagnosis ";
+                Map<String, Object> map = Map.of(
+                        "patientId", patientId,
+                        "doctorId", doctorId,
+                        "diagnosis", newDiagnosis
+                );
+
+                ResultSummary summary = tx.run(query, map).consume();
+                return summary.counters().propertiesSet() > 0;
+            });
+        }
+    }
+
+}
+Bước 5: Client2.java
+public class Client2 {
+
+    public static void main(String[] args) throws Exception {
+        try (Socket socket = new Socket("NNTT", 9090);
+             DataOutputStream out = new DataOutputStream(socket.getOutputStream());
+             ObjectInputStream in = new ObjectInputStream(socket.getInputStream());
+             Scanner scanner = new Scanner(System.in);
+        ) {
+
+            while (true) {
+                System.out.println("\n===== Doctor Management System =====");
+                System.out.println("1. Find Doctor by ID");
+                System.out.println("2. Add New Doctor");
+                System.out.println("3. Get Number of Doctors by Speciality and Department");
+                System.out.println("4. List Doctors by Speciality");
+                System.out.println("5. Update Patient Diagnosis");
+                System.out.println("6. Exit");
+                System.out.print("Choose an option: ");
+                int choice = scanner.nextInt();
+                scanner.nextLine(); // Consume newline
+
+                switch (choice) {
+                    case 1 -> {
+                        out.writeUTF("FIND_DOCTOR");
+
+                        System.out.print("Enter Doctor ID: ");
+                        String doctorId = scanner.nextLine();
+                        out.writeUTF(doctorId);
+                        out.flush();
+
+                        Doctor doctor = (Doctor) in.readObject();
+                        System.out.println(doctor);
+                    }
+
+                    case 2 -> {
+                        out.writeUTF("ADD_DOCTOR");
+
+                        System.out.print("Enter Doctor ID: ");
+                        String doctorId = scanner.nextLine();
+                        out.writeUTF(doctorId);
+
+                        System.out.print("Enter Doctor Name: ");
+                        String doctorName = scanner.nextLine();
+                        out.writeUTF(doctorName);
+
+                        System.out.print("Enter Speciality: ");
+                        String speciality = scanner.nextLine();
+                        out.writeUTF(speciality);
+
+                        System.out.print("Enter Phone Number: ");
+                        String phoneNumber = scanner.nextLine();
+                        out.writeUTF(phoneNumber);
+                        out.flush();
+
+                        boolean isAdded = in.readBoolean();
+                        if (isAdded) {
+                            System.out.println("Doctor added successfully!");
+                        } else {
+                            System.out.println("Failed to add doctor!");
+                        }
+                    }
+
+                    case 3 -> {
+                        out.writeUTF("GET_DOCTOR_COUNT");
+
+                        System.out.println("Enter department name: ");
+                        String deptName = scanner.nextLine();
+                        out.writeUTF(deptName);
+                        out.flush();
+
+                        Map<String, Long> doctorCount = (Map<String, Long>) in.readObject();
+                        doctorCount.entrySet()
+                                .forEach(entry -> System.out.println(entry.getKey() + ": " + entry.getValue()));
+                    }
+
+                    case 4 -> {
+                        out.writeUTF("LIST_DOCTORS");
+
+                        System.out.print("Enter Speciality Keyword: ");
+                        String keyword = scanner.nextLine();
+                        out.writeUTF(keyword);
+                        out.flush();
+
+                        List<Doctor> doctorList = (List<Doctor>) in.readObject();
+                        doctorList.forEach(System.out::println);
+                    }
+
+                    case 5 -> {
+                        out.writeUTF("UPDATE_DIAGNOSIS");
+
+                        System.out.print("Enter Patient ID: ");
+                        String patientId = scanner.nextLine();
+                        out.writeUTF(patientId);
+
+                        System.out.print("Enter Doctor ID: ");
+                        String doctorId = scanner.nextLine();
+                        out.writeUTF(doctorId);
+
+                        System.out.print("Enter New Diagnosis: ");
+                        String newDiagnosis = scanner.nextLine();
+                        out.writeUTF(newDiagnosis);
+                        out.flush();
+
+                        boolean isUpdated = in.readBoolean();
+                        if (isUpdated) {
+                            System.out.println("Diagnosis updated successfully!");
+                        } else {
+                            System.out.println("Failed to update diagnosis!");
+                        }
+                    }
+
+                    case 6 -> {
+                        System.out.println("Exiting...");
+                        out.writeUTF("EXIT");
+                        out.flush();
+                        return;
+                    }
+
+                    default -> System.out.println("Invalid choice! Please select again.");
+                }
+            }
+        }
+    }
+
+Bước 6: class Server2.java
+public class Server2 {
+
+    public static void main(String[] args) throws IOException {
+        try (ServerSocket serverSocket = new ServerSocket(9090)) {
+            System.out.println("Server is ready!!!");
+            while (true) {//24/7
+                Socket socket = serverSocket.accept();
+                System.out.println(socket.getInetAddress());
+                System.out.println(socket.getPort());
+
+                Thread thread = new Thread(new HandlingClient2(socket));
+                thread.start();
+            }
+        }
+    }
+}
+class HandlingClient2 implements Runnable {
+    private Socket socket;
+    private DoctorDAO doctorDAO;
+
+    public HandlingClient2(Socket socket) {
+        this.socket = socket;
+        doctorDAO = new DoctorDAOImpl();
+    }
+
+    @Override
+    public void run() {
+        try (ObjectOutputStream out = new ObjectOutputStream(socket.getOutputStream());
+             DataInputStream in = new DataInputStream(socket.getInputStream());
+             Scanner scanner = new Scanner(System.in)) {
+            while (true) {
+                // Received request from Client
+                String command = in.readUTF();
+
+                switch (command) {
+                    case "FIND_DOCTOR" -> {
+                        String doctorId = in.readUTF();
+
+                        Doctor doctor = doctorDAO.findDoctorById(doctorId);
+                        out.writeObject(doctor);
+                        out.flush();
+                    }
+
+                    case "ADD_DOCTOR" -> {
+                        String id = in.readUTF();
+                        String name = in.readUTF();
+                        String speciality = in.readUTF();
+                        String phone = in.readUTF();
+
+                        Doctor doctor = new Doctor(id, name, phone, speciality);
+                        boolean result = doctorDAO.addDoctor(doctor);
+
+                        out.writeBoolean(result);
+                        out.flush();
+                    }
+
+
+                    case "GET_DOCTOR_COUNT" -> {
+                        String deptName = in.readUTF();
+
+                        Map<String, Long> doctorCount = doctorDAO.getNoOfDoctorsBySpeciality(deptName);
+                        out.writeObject(doctorCount);
+                        out.flush();
+                    }
+                    case "LIST_DOCTORS" -> {
+                        String keywords = in.readUTF();
+                        System.out.println(keywords);
+
+                        List<Doctor> doctors = doctorDAO.listDoctorsBySpeciality(keywords);
+//                      System.out.println(doctors);
+                        out.writeObject(doctors);
+                        out.flush();
+                    }
+
+                    case "UPDATE_DIAGNOSIS" -> {
+                        String patientId = in.readUTF();
+                        String doctorId = in.readUTF();
+                        String diagnosis = in.readUTF();
+
+                        boolean result = doctorDAO.updateDiagnosis(patientId, doctorId, diagnosis);
+
+                        out.writeBoolean(result);
+                        out.flush();
+                    }
+
+                    case "EXIT" -> {
+                        System.out.println("Client disconnected.");
+                        socket.close();
+                        return;
+                    }
+                    default -> System.out.println("Invalid command received: " + command);
+                }
+            }
+        } catch (Exception ex) {
+            ex.printStackTrace();
+        }
+    }
+}
+
+Câu 4: Dùng Junit 5, viết lớp kiểm thử, tạo các test case cho các phương thức CRUD trên. 
+Thêm bác sỹ mới phải là thông tin của sinh viên làm bài.
+@TestInstance(TestInstance.Lifecycle.PER_CLASS)
+public class DoctorDAOTest {
+    private DoctorDAO doctorDAO;
+
+    @BeforeAll
+    void setup(){
+        doctorDAO = new DoctorDAOImpl();
+    }
+
+    @Test
+    void findDoctorByIDTest(){
+        Doctor doctor = doctorDAO.findDoctorById("DR.010");
+        assertEquals("Daniel Rodriguez", doctor.getName());
+        assertEquals("0567.890.123", doctor.getPhone());
+        assertEquals("Ophthalmology and Optometry", doctor.getSpeciality());
+    }
+
+    @Test
+    void findDoctorByIDNullTest(){
+        Doctor doctor = doctorDAO.findDoctorById("DR.110");
+        assertNull(doctor);
+    }
+
+
+    @AfterAll
+    void tearDown(){
+        doctorDAO = null;
+    }
+
+}
+Câu 5: Hiện thực chương trình multi clients -server để thực thi các phương thức ở câu 3.
+Bước 1: Thiết lập setting để gộp 2 project client và server
+ Chọn project-Server => chọn file => setting => systems setting => Open project in => ask
+Bước 2: Tạo file JAR của project-server
+Chọn biểu tượng gradle bên phải màn hình => chọn project-server =>chọn Task => chọn build => chọn JAR
+Bước 3: xóa DoctorDAOImpl của file JAR vừa tạo
+Chọn vào thư mục chứa file JAR vừa tạo => mở file zip , xóa DoctocDAOImpl và lưu lại
+Bước 4: copy thư mục libs project-server vào project-client
+Bước 5:
+Chọn project-client => file => project-structure => modules => chọn project-client =>  Dependencies =>chọn (+) => 1.JAR Direct.... => trỏ vào file JAR vừa copy vào => chọn compobox Runtime 
+Bước 6: Thiết lập file build.gradle của project-client
+dependencies {
+    implementation(files("libs/HospitalPrj-1.0-SNAPSHOT.jar"))
+    testImplementation(platform("org.junit:junit-bom:5.9.1"))
+    testImplementation("org.junit.jupiter:junit-jupiter")
+
+}
+Bước 7: Copy file Client2 trên project-server xuống project-client
+Bước 8: Chạy thử 
+
